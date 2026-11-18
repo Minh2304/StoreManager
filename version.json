@@ -1,0 +1,8 @@
+{
+  "versionCode": 1,
+  "versionName": "1.0.0",
+  "releaseDate": "18/11/2026",
+  "apkUrl": "https://raw.githubusercontent.com/Minh2304/StoreManager/release/AFaDa-StoreManager.apk",
+  "releasePageUrl": "https://github.com/Minh2304/StoreManager/tree/release",
+  "releaseNotes": "Phiên bản 1.0.0: Quản lý bán hàng đồ uống, tự động tạo Google Sheet theo cửa hàng, in hóa đơn Bluetooth kèm mã QR VietQR chuẩn NAPAS."
+}
