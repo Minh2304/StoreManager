@@ -409,6 +409,10 @@ class StoreViewModel(
         _authState.update { it.copy(otpSent = false, message = null, isError = false) }
     }
 
+    fun setAuthErrorMessage(msg: String) {
+        _authState.update { it.copy(isLoading = false, message = msg, isError = true) }
+    }
+
     fun loginWithGmail(email: String, password: String, onSuccess: () -> Unit) {
         viewModelScope.launch {
             _authState.update { it.copy(isLoading = true, message = null, isError = false) }
@@ -420,6 +424,7 @@ class StoreViewModel(
                     it.copy(
                         loggedInEmail = cleanEmail,
                         isLoading = false,
+                        otpSent = false,
                         message = null,
                         isError = false
                     )
@@ -431,6 +436,38 @@ class StoreViewModel(
                     it.copy(
                         isLoading = false,
                         message = err.message ?: "Không thể đăng nhập",
+                        isError = true
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Đăng nhập & Xác thực chính chủ bằng Google OAuth2 (Cấp quyền tạo Google Sheet trên Google Drive)
+     */
+    fun loginWithVerifiedGoogleOAuth(email: String, displayName: String?, onSuccess: () -> Unit) {
+        viewModelScope.launch {
+            _authState.update { it.copy(isLoading = true, message = null, isError = false) }
+            val result = repository.loginWithVerifiedGoogleAccount(email, displayName)
+            result.onSuccess {
+                val cleanEmail = email.trim().lowercase()
+                _activeEmail.value = cleanEmail
+                _authState.update {
+                    it.copy(
+                        loggedInEmail = cleanEmail,
+                        isLoading = false,
+                        otpSent = false,
+                        message = null,
+                        isError = false
+                    )
+                }
+                onSuccess()
+            }.onFailure { err ->
+                _authState.update {
+                    it.copy(
+                        isLoading = false,
+                        message = err.message ?: "Xác thực Google thất bại",
                         isError = true
                     )
                 }

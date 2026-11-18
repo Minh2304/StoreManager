@@ -174,16 +174,28 @@ class StoreRepository(
             .apply()
     }
 
-    // --- 1. ĐĂNG NHẬP / ĐĂNG KÝ / QUÊN MẬT KHẨU BẰNG GMAIL ---
+    // --- 1. ĐĂNG NHẬP / ĐĂNG KÝ / QUÊN MẬT KHẨU BẰNG EMAIL & GMAIL ---
+
+    private fun isValidEmail(email: String): Boolean {
+        val atIdx = email.indexOf('@')
+        val dotIdx = email.lastIndexOf('.')
+        return atIdx > 0 && dotIdx > atIdx + 1 && dotIdx < email.length - 1
+    }
 
     /**
-     * Đăng nhập nhanh bằng Gmail + Mật khẩu (KHÔNG CẦN OTP để đăng nhập trên nhiều thiết bị)
+     * Đăng nhập bằng Email + Mật khẩu:
+     * - Chấp nhận mọi địa chỉ Email hợp lệ đã được đăng ký (Gmail, Yahoo, Outlook, tên miền riêng...).
+     * - Bắt buộc Email đó PHẢI ĐƯỢC ĐĂNG KÝ TRƯỚC; nếu chưa đăng ký sẽ chặn lại và yêu cầu đăng ký.
      */
-    suspend fun loginWithGmail(emailInput: String, passwordInput: String): Result<String> {
+    suspend fun loginWithGmail(
+        emailInput: String,
+        passwordInput: String
+    ): Result<String> {
         val email = emailInput.trim().lowercase()
         val password = passwordInput.trim()
-        if (email.isBlank() || !email.contains("@")) {
-            return Result.failure(IllegalArgumentException("Vui lòng nhập đúng địa chỉ Gmail!"))
+
+        if (!isValidEmail(email)) {
+            return Result.failure(IllegalArgumentException("Vui lòng nhập đúng địa chỉ Email!"))
         }
         if (password.isBlank()) {
             return Result.failure(IllegalArgumentException("Vui lòng nhập mật khẩu!"))
@@ -203,9 +215,15 @@ class StoreRepository(
                     }
                     saveLoggedInEmail(email)
                     return Result.success("Đăng nhập thành công!")
+                } else if (res.status == "error") {
+                    return Result.failure(
+                        IllegalArgumentException(
+                            res.message ?: "Email này chưa được đăng ký hoặc sai mật khẩu!"
+                        )
+                    )
                 }
             } catch (_: Exception) {
-                // Nếu mất mạng hoặc lỗi kết nối, chuyển sang kiểm tra tài khoản Offline
+                // Nếu chưa kết nối mạng/cloud thì kiểm tra nghiêm ngặt trong SQLite cục bộ
             }
         }
 
@@ -218,20 +236,38 @@ class StoreRepository(
                 Result.failure(IllegalArgumentException("Sai mật khẩu! Nếu quên, hãy bấm 'Quên mật khẩu'."))
             }
         } else {
-            // Cho phép đăng nhập nhanh lần đầu trên thiết bị mới mà không cần xác thực OTP
-            dao.insertAccount(UserAccountEntity(email, password))
-            saveLoggedInEmail(email)
-            Result.success("Đăng nhập thành công!")
+            // Chặn hoàn toàn nếu tài khoản Email chưa từng được đăng ký!
+            Result.failure(IllegalArgumentException("Email này chưa được đăng ký! Vui lòng bấm 'Đăng ký mới' ở bên dưới."))
         }
     }
 
     /**
-     * Gửi mã xác thực OTP 6 số (Chỉ dùng cho bước Đăng ký tài khoản mới hoặc Quên mật khẩu)
+     * Đăng nhập trực tiếp bằng tài khoản Gmail có sẵn trên máy:
+     * Sau khi người dùng chọn 1 tài khoản Gmail từ hộp thoại hệ thống Android,
+     * tự động lưu tài khoản vào máy (nếu chưa có) và cho phép đăng nhập luôn mà không cần đăng ký hay mật khẩu.
+     */
+    suspend fun loginWithVerifiedGoogleAccount(emailInput: String, displayName: String?): Result<String> {
+        val email = emailInput.trim().lowercase()
+        if (!isValidEmail(email)) {
+            return Result.failure(IllegalArgumentException("Không lấy được thông tin tài khoản Gmail từ máy!"))
+        }
+        val existing = dao.getAccountByEmail(email)
+        if (existing == null) {
+            dao.insertAccount(UserAccountEntity(email = email, password = "GOOGLE_DEVICE_ACCOUNT"))
+        }
+        saveLoggedInEmail(email)
+        refreshDatabasesFromCloud(email)
+        val label = if (!displayName.isNullOrBlank()) "$displayName ($email)" else email
+        return Result.success("Đã đăng nhập bằng Gmail: $label")
+    }
+
+    /**
+     * Gửi mã xác thực OTP 6 số (Dùng cho bước Đăng ký tài khoản Email mới hoặc Quên mật khẩu)
      */
     suspend fun sendVerificationOtp(emailInput: String): Result<String> {
         val email = emailInput.trim().lowercase()
-        if (email.isBlank() || !email.contains("@")) {
-            return Result.failure(IllegalArgumentException("Vui lòng nhập đúng địa chỉ Gmail!"))
+        if (!isValidEmail(email)) {
+            return Result.failure(IllegalArgumentException("Vui lòng nhập đúng địa chỉ Email!"))
         }
 
         val generatedOtp = (100000..999999).random().toString()
@@ -246,26 +282,26 @@ class StoreRepository(
                 )
                 if (res.status == "success") {
                     res.debugOtp?.let { localOtpStore[email] = it }
-                    return Result.success(res.message ?: "Đã gửi mã 6 số vào Gmail $email")
+                    return Result.success(res.message ?: "Đã gửi mã 6 số vào Email $email")
                 }
             } catch (_: Exception) {
                 // Fallback hiển thị mã trên máy ảo nếu chưa kết nối mạng
             }
         }
 
-        return Result.success("Mã xác thực Gmail của bạn là: $generatedOtp")
+        return Result.success("Mã xác thực Email của bạn là: $generatedOtp")
     }
 
     /**
-     * Đăng ký Gmail mới (Cần xác thực mã OTP 6 số)
+     * Đăng ký Email mới (Cần xác thực mã OTP 6 số, chấp nhận mọi Email hợp lệ)
      */
     suspend fun registerWithOtp(emailInput: String, passwordInput: String, otpInput: String): Result<String> {
         val email = emailInput.trim().lowercase()
         val password = passwordInput.trim()
         val otp = otpInput.trim()
 
-        if (email.isBlank() || !email.contains("@")) {
-            return Result.failure(IllegalArgumentException("Vui lòng nhập đúng Gmail!"))
+        if (!isValidEmail(email)) {
+            return Result.failure(IllegalArgumentException("Vui lòng nhập đúng địa chỉ Email!"))
         }
         if (password.length < 4) {
             return Result.failure(IllegalArgumentException("Mật khẩu cần ít nhất 4 ký tự!"))
@@ -294,7 +330,8 @@ class StoreRepository(
         }
 
         val expectedOtp = localOtpStore[email]
-        if (expectedOtp != null && expectedOtp != otp) {
+            ?: return Result.failure(IllegalArgumentException("Vui lòng nhấn 'Lấy mã' để nhận mã xác thực 6 số!"))
+        if (expectedOtp != otp) {
             return Result.failure(IllegalArgumentException("Mã xác thực 6 số không đúng!"))
         }
 
@@ -311,6 +348,9 @@ class StoreRepository(
         val newPassword = newPasswordInput.trim()
         val otp = otpInput.trim()
 
+        if (!isValidEmail(email)) {
+            return Result.failure(IllegalArgumentException("Vui lòng nhập đúng địa chỉ Email!"))
+        }
         if (newPassword.length < 4) {
             return Result.failure(IllegalArgumentException("Mật khẩu mới cần ít nhất 4 ký tự!"))
         }
@@ -334,7 +374,8 @@ class StoreRepository(
         }
 
         val expectedOtp = localOtpStore[email]
-        if (expectedOtp != null && expectedOtp != otp) {
+            ?: return Result.failure(IllegalArgumentException("Vui lòng nhấn 'Lấy mã' để nhận mã xác thực 6 số!"))
+        if (expectedOtp != otp) {
             return Result.failure(IllegalArgumentException("Mã xác thực 6 số không đúng!"))
         }
 

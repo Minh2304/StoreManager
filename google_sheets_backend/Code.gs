@@ -146,10 +146,10 @@ function doPost(e) {
     const body = JSON.parse(e.postData.contents);
     const action = body.action || 'pushAll';
 
-    // 1. GỬI MÃ OTP XÁC THỰC VỀ GMAIL (Dùng cho Đăng ký & Quên mật khẩu)
+    // 1. GỬI MÃ OTP XÁC THỰC VỀ EMAIL (Dùng cho Đăng ký & Quên mật khẩu)
     if (action === 'sendOtp') {
       const email = String(body.email || '').trim().toLowerCase();
-      if (!email) return jsonResponse({ status: 'error', message: 'Vui lòng nhập Gmail!' });
+      if (!email) return jsonResponse({ status: 'error', message: 'Vui lòng nhập Email!' });
 
       const otp = Math.floor(100000 + Math.random() * 900000).toString();
       const expiresAt = new Date().getTime() + 10 * 60 * 1000; // Hiệu lực 10 phút
@@ -176,7 +176,7 @@ function doPost(e) {
 
       return jsonResponse({
         status: 'success',
-        message: 'Đã gửi mã 6 số vào Gmail ' + email
+        message: 'Đã gửi mã 6 số vào Email ' + email
       });
     }
 
@@ -192,7 +192,7 @@ function doPost(e) {
 
       const accounts = readSheetObjects(masterSs, SYSTEM_SHEETS.ACCOUNTS);
       if (accounts.some(acc => String(acc.email).toLowerCase() === email)) {
-        return jsonResponse({ status: 'error', message: 'Gmail này đã được đăng ký rồi!' });
+        return jsonResponse({ status: 'error', message: 'Email này đã được đăng ký rồi!' });
       }
 
       accounts.push({
@@ -238,15 +238,18 @@ function doPost(e) {
       });
     }
 
-    // 4. ĐĂNG NHẬP NHANH TRÊN NHIỀU THIẾT BỊ (KHÔNG CẦN OTP)
+    // 4. ĐĂNG NHẬP BẰNG EMAIL + MẬT KHẨU (KIỂM TRA TÀI KHOẢN ĐÃ ĐĂNG KÝ)
     if (action === 'login') {
       const email = String(body.email || '').trim().toLowerCase();
       const password = String(body.password || '').trim();
 
       const accounts = readSheetObjects(masterSs, SYSTEM_SHEETS.ACCOUNTS);
-      const matched = accounts.find(acc => String(acc.email).toLowerCase() === email && String(acc.password) === password);
-      if (!matched) {
-        return jsonResponse({ status: 'error', message: 'Sai Gmail hoặc mật khẩu!' });
+      const existingEmail = accounts.find(acc => String(acc.email).toLowerCase() === email);
+      if (!existingEmail) {
+        return jsonResponse({ status: 'error', message: 'Email này chưa được đăng ký! Vui lòng bấm Đăng ký mới.' });
+      }
+      if (String(existingEmail.password) !== password) {
+        return jsonResponse({ status: 'error', message: 'Sai mật khẩu!' });
       }
 
       const allDbs = readSheetObjects(masterSs, SYSTEM_SHEETS.DATABASES);

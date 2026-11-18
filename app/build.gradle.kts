@@ -12,8 +12,8 @@ android {
         applicationId = "com.storemanager.afada"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -87,6 +87,9 @@ dependencies {
 
     // ZXing Core (Tạo mã QR chuẩn EMVCo / NAPAS VietQR 100% quét được bằng mọi App Ngân hàng)
     implementation("com.google.zxing:core:3.5.3")
+
+    // Google Sign-In & OAuth2 (Xác thực Gmail chính chủ + Cấp quyền tạo Google Sheet trực tiếp trên Google Drive của người dùng)
+    implementation("com.google.android.gms:play-services-auth:21.2.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
